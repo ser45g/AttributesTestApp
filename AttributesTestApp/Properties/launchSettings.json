@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "AttributesTestApp": {
+      "commandName": "Project",
+      "commandLineArgs": "greet -n John"
+    }
+  }
+}
