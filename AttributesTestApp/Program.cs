@@ -1,16 +1,13 @@
 ﻿using AttributesTestApp;
 using AttributesTestApp.Services;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-var app = Host.CreateDefaultBuilder(args).ConfigureServices(services =>
-{
-    services.AddScoped<IDateTimeProvider, DateTimeProvider>();
-}).ConfigureHostConfiguration(config =>
-{
-    config.AddJsonFile("appsettings.json");
-}).Build();
+var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.AddScoped<IDateTimeProvider, DateTimeProvider>();
+    
+var app = builder.Build();
 
 var scopeFactory = app.Services.GetRequiredService<IServiceScopeFactory>();
 
