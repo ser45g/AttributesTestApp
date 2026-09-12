@@ -3,7 +3,7 @@
 namespace AttributesTestApp.Commands
 {
     [Command("greet", Description = "Greets a user by name")]
-    public class GreetCommand
+    public class GreetCommand: ICommand
     {
         [Option("n", "name", Description = "Your name", IsRequired = true)]
         public string Name { get; set; }
@@ -14,7 +14,7 @@ namespace AttributesTestApp.Commands
         [Option("u", "uppercase", Description = "Greet in UPPERCASE")]
         public bool Uppercase { get; set; }
 
-        public void Execute()
+        public ValueTask Execute(CancellationToken cancellationToken)
         {
             var greeting = $"Hello, {Name}!";
             if (Uppercase) greeting = greeting.ToUpper();
@@ -23,6 +23,8 @@ namespace AttributesTestApp.Commands
             {
                 Console.WriteLine(greeting);
             }
+
+            return ValueTask.CompletedTask;
         }
     }
 }

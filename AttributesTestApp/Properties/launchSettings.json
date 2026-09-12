@@ -2,7 +2,7 @@
   "profiles": {
     "AttributesTestApp": {
       "commandName": "Project",
-      "commandLineArgs": "greet -n John"
+      "commandLineArgs": "long"
     }
   }
 }

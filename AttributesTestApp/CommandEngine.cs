@@ -1,19 +1,22 @@
 ﻿using AttributesTestApp.Attributes;
+using AttributesTestApp.Commands;
+using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
-using System.Xml.Linq;
 
 namespace AttributesTestApp
 {
     public class CommandEngine
     {
         private readonly Dictionary<string, Type> _commands;
+        private readonly IServiceScopeFactory _scopeFactory;
 
-        private CommandEngine(Dictionary<string, Type> commands)
+        public CommandEngine(Dictionary<string, Type> commands, IServiceScopeFactory scopeFactory)
         {
-           _commands = commands;
+            _commands = commands;
+            _scopeFactory = scopeFactory;
         }
 
-        public static CommandEngine Create()
+        public static CommandEngine Create(IServiceScopeFactory serviceScopeFactory)
         {
             Dictionary<string, Type> commands = new();
 
@@ -28,10 +31,10 @@ namespace AttributesTestApp
                     commands[attr.Name.ToLower()] = type;
             }
 
-            return new CommandEngine(commands);
+            return new CommandEngine(commands, serviceScopeFactory);
         }
 
-        public void Run(string[] args)
+        public async Task Run(string[] args)
         {
             if (args.Length == 0)
             {
@@ -40,6 +43,7 @@ namespace AttributesTestApp
             }
 
             var commandName = args[0].ToLower();
+
             var commandArgs = args.Skip(1).ToArray();
 
             if (!_commands.TryGetValue(commandName, out var commandType))
@@ -49,23 +53,43 @@ namespace AttributesTestApp
                 return;
             }
 
+
+            using CancellationTokenSource tokenSource = new();
+
+            ConsoleCancelEventHandler cancelEventHandler = (object? sender, ConsoleCancelEventArgs e) =>
+            {
+                e.Cancel = true;
+                tokenSource.Cancel();
+                Console.WriteLine("Execution was stopped");
+            };
+
+            Console.CancelKeyPress += cancelEventHandler;
+
             try
             {
-                var command = Activator.CreateInstance(commandType);
+                using var scope = _scopeFactory.CreateScope();
 
-                ParseArguments(command, commandArgs);
+                var command = (ICommand)ActivatorUtilities.CreateInstance(scope.ServiceProvider, commandType);
 
-                var executeMethod = commandType.GetMethod("Execute");
+                ParseArguments(command, commandArgs); //would be good if it's executed before creating scopes and all that
 
-                executeMethod?.Invoke(command, null);
+                await command.Execute(tokenSource.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine("The operation was cancelled");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error: {ex.Message}");
             }
+            finally
+            {
+                Console.CancelKeyPress -= cancelEventHandler;
+            }
         }
 
-        private void ParseArguments(object command, string[] args)
+        private void ParseArguments(ICommand command, string[] args)
         {
             var properties = command.GetType().GetProperties();
 
@@ -73,32 +97,26 @@ namespace AttributesTestApp
             {
                 var arg = args[i];
 
-                // Check if this is an option (starts with - or --)
                 if (!arg.StartsWith("-")) continue;
 
-                // Find the matching property
                 foreach (var prop in properties)
                 {
                     var attr = prop.GetCustomAttribute<OptionAttribute>();
 
                     if (attr == null) continue;
 
-                    // Check if this option matches the current argument
                     var shortMatch = $"-{attr.ShortName}" == arg || $"--{attr.ShortName}" == arg;
                     var longMatch = $"--{attr.LongName}" == arg || $"-{attr.LongName}" == arg;
 
                     if (shortMatch || longMatch)
                     {
-                        // Get the value (next argument)
                         if (i + 1 < args.Length && !args[i + 1].StartsWith("-"))
                         {
                             var value = args[i + 1];
                             prop.SetValue(command, Convert.ChangeType(value, prop.PropertyType));
-                            i++; // Skip the value in the next iteration
                         }
                         else if (prop.PropertyType == typeof(bool))
                         {
-                            // Boolean flags don't need a value
                             prop.SetValue(command, true);
                         }
                         break;
@@ -106,7 +124,6 @@ namespace AttributesTestApp
                 }
             }
 
-            // Validate required options
             foreach (var prop in properties)
             {
                 var attr = prop.GetCustomAttribute<OptionAttribute>();
