@@ -1,5 +1,6 @@
-﻿using AttributesTestApp.Attributes;
-using AttributesTestApp.Commands;
+﻿using AttributesTestApp.Commands;
+using AttributesTestApp.Gen;
+using AttributesTestApp.Gen.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
 
@@ -7,31 +8,17 @@ namespace AttributesTestApp
 {
     public class CommandEngine
     {
-        private readonly Dictionary<string, Type> _commands;
         private readonly IServiceScopeFactory _scopeFactory;
 
-        public CommandEngine(Dictionary<string, Type> commands, IServiceScopeFactory scopeFactory)
+        public CommandEngine(IServiceScopeFactory scopeFactory)
         {
-            _commands = commands;
             _scopeFactory = scopeFactory;
         }
 
         public static CommandEngine Create(IServiceScopeFactory serviceScopeFactory)
         {
-            Dictionary<string, Type> commands = new();
 
-            var commandTypes = AppDomain.CurrentDomain.GetAssemblies().SelectMany(a => a.GetTypes())
-                .Where(t => t.GetCustomAttribute<CommandAttribute>() != null);
-
-            foreach (var type in commandTypes)
-            {
-                var attr = type.GetCustomAttribute<CommandAttribute>();
-
-                if(attr != null)
-                    commands[attr.Name.ToLower()] = type;
-            }
-
-            return new CommandEngine(commands, serviceScopeFactory);
+            return new CommandEngine( serviceScopeFactory);
         }
 
         public async Task Run(string[] args)
@@ -46,13 +33,14 @@ namespace AttributesTestApp
 
             var commandArgs = args.Skip(1).ToArray();
 
-            if (!_commands.TryGetValue(commandName, out var commandType))
+            if (!CommandDescriptorsStorage.Commands.TryGetValue(commandName, out var commandDescriptor))
             {
                 Console.WriteLine($"Unknown command: {commandName}");
+
                 ShowHelp();
+
                 return;
             }
-
 
             using CancellationTokenSource tokenSource = new();
 
@@ -60,7 +48,6 @@ namespace AttributesTestApp
             {
                 e.Cancel = true;
                 tokenSource.Cancel();
-                Console.WriteLine("Execution was stopped");
             };
 
             Console.CancelKeyPress += cancelEventHandler;
@@ -69,9 +56,9 @@ namespace AttributesTestApp
             {
                 using var scope = _scopeFactory.CreateScope();
 
-                var command = (ICommand)ActivatorUtilities.CreateInstance(scope.ServiceProvider, commandType);
+                var command = (ICommand)ActivatorUtilities.CreateInstance(scope.ServiceProvider, commandDescriptor.Type);
 
-                ParseArguments(command, commandArgs); //would be good if it's executed before creating scopes and all that
+                CommandArgumentBinder.Bind(command, commandDescriptor, commandArgs);
 
                 await command.Execute(tokenSource.Token);
             }
@@ -89,91 +76,36 @@ namespace AttributesTestApp
             }
         }
 
-        private void ParseArguments(ICommand command, string[] args)
-        {
-            var properties = command.GetType().GetProperties();
-
-            for (int i = 0; i < args.Length; i++)
-            {
-                var arg = args[i];
-
-                if (!arg.StartsWith("-")) continue;
-
-                foreach (var prop in properties)
-                {
-                    var attr = prop.GetCustomAttribute<OptionAttribute>();
-
-                    if (attr == null) continue;
-
-                    var shortMatch = $"-{attr.ShortName}" == arg || $"--{attr.ShortName}" == arg;
-                    var longMatch = $"--{attr.LongName}" == arg || $"-{attr.LongName}" == arg;
-
-                    if (shortMatch || longMatch)
-                    {
-                        if (i + 1 < args.Length && !args[i + 1].StartsWith("-"))
-                        {
-                            var value = args[i + 1];
-                            prop.SetValue(command, Convert.ChangeType(value, prop.PropertyType));
-                        }
-                        else if (prop.PropertyType == typeof(bool))
-                        {
-                            prop.SetValue(command, true);
-                        }
-                        break;
-                    }
-                }
-            }
-
-            foreach (var prop in properties)
-            {
-                var attr = prop.GetCustomAttribute<OptionAttribute>();
-                if (attr?.IsRequired == true && prop.GetValue(command) == null)
-                {
-                    throw new Exception($"Option -{attr.ShortName}|--{attr.LongName} is required");
-                }
-            }
-        }
-
         private void ShowHelp()
         {
             Console.WriteLine("Available commands:");
 
-            foreach (var (name, type) in _commands)
+            foreach (var (_, commandDescriptor) in CommandDescriptorsStorage.Commands)
             {
-                var attr = type.GetCustomAttribute<CommandAttribute>();
-
-                PrintCommand(type, name, attr);
+                PrintCommand(commandDescriptor);
             }
         }
 
-        private void PrintOption(OptionAttribute? optAttr)
+        private void PrintOption(OptionDescriptor optionDescriptor)
         {
-            if (optAttr != null)
+            if (optionDescriptor != null)
             {
-                Console.WriteLine(
-                    (string.IsNullOrWhiteSpace(optAttr.Description) ? 
-                        $"    -{optAttr.ShortName}|--{optAttr.LongName}  {optAttr.Description}":
-                        $"    -{optAttr.ShortName}|--{optAttr.LongName}")
-                    + (optAttr.IsRequired ? " [REQUIRED]" : ""));
+                Console.WriteLine((string.IsNullOrWhiteSpace(optionDescriptor.Description) ? 
+                        $"    -{optionDescriptor.ShortName}|--{optionDescriptor.LongName}  {optionDescriptor.Description}":
+                        $"    -{optionDescriptor.ShortName}|--{optionDescriptor.LongName}")
+                    + (optionDescriptor.IsRequired ? " [REQUIRED]" : ""));
             }
         }
 
-        private void PrintCommand(Type type, string name, CommandAttribute? attr)
+        private void PrintCommand(CommandDescriptor commandDescriptor)
         {
-            if (attr == null)
-                return;
+            Console.WriteLine(string.IsNullOrWhiteSpace(commandDescriptor.Description) ?
+                    $"  {commandDescriptor.Name}" :
+                    $"  {commandDescriptor.Name} - {commandDescriptor.Description}");
 
-            Console.WriteLine(string.IsNullOrWhiteSpace(attr.Description) ?
-                    $"  {name}" :
-                    $"  {name} - {attr.Description}");
-
-            var properties = type.GetProperties();
-
-            foreach (var prop in properties)
+            foreach (var option in commandDescriptor.Options)
             {
-                var optAttr = prop.GetCustomAttribute<OptionAttribute>();
-
-                PrintOption(optAttr);
+                PrintOption(option);
             }
             Console.WriteLine();
         }

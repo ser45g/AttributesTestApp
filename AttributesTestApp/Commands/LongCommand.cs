@@ -1,9 +1,9 @@
 ﻿
-using AttributesTestApp.Attributes;
+using AttributesTestApp.Gen.Attributes;
 
 namespace AttributesTestApp.Commands
 {
-    [Command("long")]
+    [Command(Name = "long")]
     public class LongCommand : ICommand
     {
         public async ValueTask Execute(CancellationToken cancellationToken)

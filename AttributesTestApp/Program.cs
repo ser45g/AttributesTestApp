@@ -15,4 +15,5 @@ var engine = CommandEngine.Create(scopeFactory);
 
 await app.StartAsync();
 
+
 await engine.Run(args);

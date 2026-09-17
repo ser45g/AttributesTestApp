@@ -1,12 +1,12 @@
-﻿using AttributesTestApp.Attributes;
+﻿using AttributesTestApp.Gen.Attributes;
 using AttributesTestApp.Services;
 
 namespace AttributesTestApp.Commands
 {
-    [Command("datetime", Description = "Get the current date and time")]
+    [Command(Name = "datetime", Description = "Get the current date and time")]
     public class GetDateTimeCommand(IDateTimeProvider dateTimeProvider): ICommand
     {
-       [Option("u", "utc", Description = "Get the current date and time in the utc format")]
+       [Option(ShortName = "u", LongName = "utc", Description = "Get the current date and time in the utc format")]
         public bool IsUtc { get; set; }
 
         public async ValueTask Execute(CancellationToken cancellationToken)
